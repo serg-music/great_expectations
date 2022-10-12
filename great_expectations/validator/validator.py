@@ -6,11 +6,12 @@ import json
 import logging
 import traceback
 import warnings
-from collections import defaultdict, namedtuple
+from collections import OrderedDict, defaultdict, namedtuple
 from collections.abc import Hashable
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from dateutil.parser import parse
+from marshmallow import ValidationError
 from tqdm.auto import tqdm
 
 from great_expectations import __version__ as ge_version
@@ -25,6 +26,7 @@ from great_expectations.core.expectation_validation_result import (
     ExpectationValidationResult,
 )
 from great_expectations.core.id_dict import BatchSpec
+from great_expectations.core.metric_domain_types import MetricDomainTypes
 from great_expectations.core.run_identifier import RunIdentifier
 from great_expectations.core.util import convert_to_json_serializable
 from great_expectations.data_asset.util import recursively_convert_to_json_serializable
@@ -41,14 +43,12 @@ from great_expectations.execution_engine import (
     SparkDFExecutionEngine,
     SqlAlchemyExecutionEngine,
 )
-from great_expectations.execution_engine.execution_engine import MetricDomainTypes
 from great_expectations.execution_engine.pandas_batch_data import PandasBatchData
 from great_expectations.expectations.registry import (
     get_expectation_impl,
     get_metric_provider,
     list_registered_expectation_implementations,
 )
-from great_expectations.marshmallow__shade import ValidationError
 from great_expectations.rule_based_profiler import RuleBasedProfilerResult
 from great_expectations.rule_based_profiler.config import RuleBasedProfilerConfig
 from great_expectations.rule_based_profiler.expectation_configuration_builder import (
@@ -60,11 +60,13 @@ from great_expectations.rule_based_profiler.helpers.configuration_reconciliation
     ReconciliationStrategy,
 )
 from great_expectations.rule_based_profiler.parameter_builder import ParameterBuilder
+from great_expectations.rule_based_profiler.parameter_container import (
+    ParameterContainer,
+)
 from great_expectations.rule_based_profiler.rule import Rule
 from great_expectations.rule_based_profiler.rule_based_profiler import (
     BaseRuleBasedProfiler,
 )
-from great_expectations.rule_based_profiler.types import ParameterContainer
 from great_expectations.types import ClassConfig
 from great_expectations.util import load_class, verify_dynamic_loading_support
 from great_expectations.validator.exception_info import ExceptionInfo
@@ -102,33 +104,6 @@ ValidationStatistics = namedtuple(
 )
 
 
-def _calc_validation_statistics(
-    validation_results: List[ExpectationValidationResult],
-) -> ValidationStatistics:
-    """
-    Calculate summary statistics for the validation results and
-    return ``ExpectationStatistics``.
-    """
-    # calc stats
-    successful_expectations = sum(exp.success for exp in validation_results)
-    evaluated_expectations = len(validation_results)
-    unsuccessful_expectations = evaluated_expectations - successful_expectations
-    success = successful_expectations == evaluated_expectations
-    try:
-        success_percent = successful_expectations / evaluated_expectations * 100
-    except ZeroDivisionError:
-        # success_percent = float("nan")
-        success_percent = None
-
-    return ValidationStatistics(
-        successful_expectations=successful_expectations,
-        evaluated_expectations=evaluated_expectations,
-        unsuccessful_expectations=unsuccessful_expectations,
-        success=success,
-        success_percent=success_percent,
-    )
-
-
 class Validator:
     DEFAULT_RUNTIME_CONFIGURATION = {
         "include_config": True,
@@ -148,6 +123,7 @@ class Validator:
             Any
         ] = None,  # Cannot type DataContext due to circular import
         batches: Optional[List[Batch]] = None,
+        include_rendered_content: Optional[bool] = None,
         **kwargs,
     ) -> None:
         """
@@ -156,13 +132,14 @@ class Validator:
 
         Additionally, note that Validators are used by Checkpoints under-the-hood.
 
-        :param execution_engine (ExecutionEngine):
-        :param interactive_evaluation (bool):
-        :param expectation_suite (Optional[ExpectationSuite]):
-        :param expectation_suite_name (Optional[str]):
-        :param data_context (Optional[DataContext]):
-        :param batches (Optional[List[Batch]]):
-
+        Args:
+            execution_engine: The ExecutionEngine to be used to perform validation.
+            interactive_evaluation: Whether the Validator should perform evaluation when Expectations are added.
+            expectation_suite: The ExpectationSuite to validate.
+            expectation_suite_name: The name of the ExpectationSuite to validate.
+            data_context: The DataContext associated with this Validator.
+            batches: The batches for which to validate.
+            include_rendered_content: Whether or not to include rendered_content in the ExpectationValidationResult.
         """
 
         self._data_context = data_context
@@ -202,7 +179,9 @@ class Validator:
             # TODO: verify flow of default expectation arguments
             self.set_default_expectation_argument("include_config", True)
 
-    def __dir__(self):
+        self._include_rendered_content = include_rendered_content
+
+    def __dir__(self) -> List[str]:
         """
         This custom magic method is used to enable expectation tab completion on Validator objects.
         It also allows users to call Pandas.DataFrame methods on Validator objects
@@ -278,7 +257,7 @@ class Validator:
                 f"'{type(self).__name__}'  object has no attribute '{name}'"
             )
 
-    def validate_expectation(self, name: str) -> Callable:
+    def validate_expectation(self, name: str) -> Callable:  # noqa: C901 - complexity 16
         """
         Given the name of an Expectation, obtains the Class-first Expectation implementation and utilizes the
                 expectation's validate method to obtain a validation result. Also adds in the runtime configuration
@@ -386,7 +365,10 @@ class Validator:
                     # Add a "success" object to the config
                     stored_config.success_on_last_run = validation_result.success
 
-                if self._data_context is not None:
+                # NOTE: <DataContextRefactor> Indirect way to checking whether _data_context is a ExplorerDataContext
+                if self._data_context is not None and hasattr(
+                    self._data_context, "update_return_obj"
+                ):
                     validation_result = self._data_context.update_return_obj(
                         self, validation_result
                     )
@@ -405,6 +387,11 @@ class Validator:
                     )
                 else:
                     raise err
+
+            if self._include_rendered_content:
+                validation_result.render()
+                validation_result.expectation_config.render()
+
             return validation_result
 
         inst_expectation.__name__ = name
@@ -627,7 +614,7 @@ class Validator:
             profiler_config.name == expectation_type
         ), "The name of profiler used to build an ExpectationConfiguration must equal to expectation_type of the expectation being invoked."
 
-        profiler: BaseRuleBasedProfiler = BaseRuleBasedProfiler(
+        profiler = BaseRuleBasedProfiler(
             profiler_config=profiler_config,
             data_context=self.data_context,
         )
@@ -797,13 +784,17 @@ class Validator:
         ]
 
     def compute_metrics(
-        self, metric_configurations: List[MetricConfiguration]
+        self,
+        metric_configurations: List[MetricConfiguration],
     ) -> Dict[Tuple[str, str, str], Any]:
         """
-        metrics: List of desired MetricConfiguration objects to be resolved.
-        Return Dictionary with requested metrics resolved, with unique metric ID as key and computed metric as value.
+        Args:
+            metric_configurations: List of desired MetricConfiguration objects to be resolved.
+
+        Returns:
+            Dictionary with requested metrics resolved, with unique metric ID as key and computed metric as value.
         """
-        graph: ValidationGraph = ValidationGraph()
+        graph = ValidationGraph()
 
         metric_configuration: MetricConfiguration
         for metric_configuration in metric_configurations:
@@ -844,13 +835,19 @@ class Validator:
 
         return resolved_metrics
 
-    def get_metrics(self, metrics: Dict[str, MetricConfiguration]) -> Dict[str, Any]:
+    def get_metrics(
+        self,
+        metrics: Dict[str, MetricConfiguration],
+    ) -> Dict[str, Any]:
         """
-        metrics: Dictionary of desired metrics to be resolved, with metric_name as key and MetricConfiguration as value.
-        Return Dictionary with requested metrics resolved, with metric_name as key and computed metric as value.
+        Args:
+            metrics: Dictionary of desired metrics to be resolved, with metric_name as key and MetricConfiguration as value.
+
+        Returns:
+            Return Dictionary with requested metrics resolved, with metric_name as key and computed metric as value.
         """
         resolved_metrics: Dict[Tuple[str, str, str], Any] = self.compute_metrics(
-            metric_configurations=list(metrics.values())
+            metric_configurations=list(metrics.values()),
         )
 
         return {
@@ -886,11 +883,14 @@ class Validator:
                     key
                 ] = metric_provider_cls.default_kwarg_values[key]
 
-    def get_metric(self, metric: MetricConfiguration) -> Any:
+    def get_metric(
+        self,
+        metric: MetricConfiguration,
+    ) -> Any:
         """return the value of the requested metric."""
-        return self.get_metrics(metrics={metric.metric_name: metric})[
-            metric.metric_name
-        ]
+        return self.get_metrics(
+            metrics={metric.metric_name: metric},
+        )[metric.metric_name]
 
     def graph_validate(
         self,
@@ -902,15 +902,15 @@ class Validator:
         then proceeds to add these dependencies to the validation graph, supply readily available metric implementations
         to fulfill current metric requirements, and validate these metrics.
 
-                Args:
-                    configurations(List[ExpectationConfiguration]): A list of needed Expectation Configurations that
-                    will be used to supply domain and values for metrics.
-                    metrics (dict): A list of currently registered metrics in the registry
-                    runtime_configuration (dict): A dictionary of runtime keyword arguments, controlling semantics
-                    such as the result_format.
+        Args:
+            configurations(List[ExpectationConfiguration]): A list of needed Expectation Configurations that will be
+            used to supply domain and values for metrics.
+            metrics (dict): A list of currently registered metrics in the registry
+            runtime_configuration (dict): A dictionary of runtime keyword arguments, controlling semantics, such as the
+            result_format.
 
-                Returns:
-                    A list of Validations, validating that all necessary metrics are available.
+        Returns:
+            A list of Validations, validating that all necessary metrics are available.
         """
         if runtime_configuration is None:
             runtime_configuration = {}
@@ -1050,11 +1050,11 @@ class Validator:
                 if catch_exceptions:
                     exception_traceback: str = traceback.format_exc()
                     exception_message: str = str(err)
-                    exception_info: ExceptionInfo = ExceptionInfo(
+                    exception_info = ExceptionInfo(
                         exception_traceback=exception_traceback,
                         exception_message=exception_message,
                     )
-                    result: ExpectationValidationResult = ExpectationValidationResult(
+                    result = ExpectationValidationResult(
                         success=False,
                         exception_info=exception_info,
                         expectation_config=evaluated_config,
@@ -1079,7 +1079,7 @@ class Validator:
                 ]
             )
         )
-        validation_graph: ValidationGraph = ValidationGraph(edges=edges)
+        validation_graph = ValidationGraph(edges=edges)
         return validation_graph
 
     def _resolve_suite_level_graph_and_process_metric_evaluation_errors(
@@ -1148,7 +1148,7 @@ class Validator:
             List of ExpectationValidationResult objects with unsuccessful ExpectationValidationResult objects appended
         """
         exception_message: str = str(exception)
-        exception_info: ExceptionInfo = ExceptionInfo(
+        exception_info = ExceptionInfo(
             exception_traceback=exception_traceback,
             exception_message=exception_message,
         )
@@ -1215,7 +1215,7 @@ class Validator:
                     runtime_configuration=runtime_configuration,
                 )
 
-    def resolve_validation_graph(
+    def resolve_validation_graph(  # noqa: C901 - complexity 16
         self,
         graph: ValidationGraph,
         metrics: Dict[Tuple[str, str, str], Any],
@@ -1267,8 +1267,8 @@ class Validator:
                     desc="Calculating Metrics",
                     disable=disable,
                 )
-                progress_bar.update(0)
-                progress_bar.refresh()
+            progress_bar.update(0)
+            progress_bar.refresh()
 
             computable_metrics = set()
 
@@ -1415,6 +1415,9 @@ aborting graph resolution.
     @property
     def batches(self) -> Dict[str, Batch]:
         """Getter for batches"""
+        if not isinstance(self._batches, OrderedDict):
+            self._batches = OrderedDict(self._batches)
+
         return self._batches
 
     @property
@@ -1566,7 +1569,7 @@ set as active.
             suppress_warnings,
         )
 
-    def get_expectation_suite(
+    def get_expectation_suite(  # noqa: C901 - complexity 17
         self,
         discard_failed_expectations: bool = True,
         discard_result_format_kwargs: bool = True,
@@ -1623,9 +1626,8 @@ set as active.
 
         if discards["failed_expectations"] > 0 and not suppress_warnings:
             message += (
-                " Omitting %d expectation(s) that failed when last run; set "
+                f" Omitting {discards['failed_expectations']} expectation(s) that failed when last run; set "
                 "discard_failed_expectations=False to include them."
-                % discards["failed_expectations"]
             )
 
         for expectation in expectations:
@@ -1733,7 +1735,7 @@ set as active.
             )
 
     # TODO: <Alex>Should "include_config" also be an argument of this method?</Alex>
-    def validate(
+    def validate(  # noqa: C901 - complexity 31
         self,
         expectation_suite=None,
         run_id=None,
@@ -1746,6 +1748,7 @@ set as active.
         only_return_failures: bool = False,
         run_name: Optional[str] = None,
         run_time: Optional[str] = None,
+        checkpoint_name: Optional[str] = None,
     ) -> Union[ExpectationValidationResult, ExpectationSuiteValidationResult]:
         # noinspection SpellCheckingInspection
         """Generates a JSON-formatted report describing the outcome of all expectations.
@@ -1780,6 +1783,9 @@ set as active.
                 etc.).
             only_return_failures (boolean): \
                 If True, expectation results are only returned when ``success = False`` \
+            checkpoint_name (string or None): \
+                Name of the Checkpoint which invoked this Validator.validate() call against an Expectation Suite. \
+                It will be added to `meta` field of the returned ExpectationSuiteValidationResult.
 
         Returns:
             A JSON-formatted dictionary containing a list of the validation results. \
@@ -1871,8 +1877,7 @@ set as active.
                     raise
                 except OSError:
                     raise GreatExpectationsError(
-                        "Unable to load expectation suite: IO error while reading %s"
-                        % expectation_suite
+                        f"Unable to load expectation suite: IO error while reading {expectation_suite}"
                     )
             elif not isinstance(expectation_suite, ExpectationSuite):
                 logger.error(
@@ -1918,10 +1923,6 @@ set as active.
 
             # Warn if our version is different from the version in the configuration
             # TODO: Deprecate "great_expectations.__version__"
-            # noinspection PyUnusedLocal
-            suite_ge_version = expectation_suite.meta.get(
-                "great_expectations_version"
-            ) or expectation_suite.meta.get("great_expectations.__version__")
 
             # Group expectations by column
             columns = {}
@@ -1955,7 +1956,12 @@ set as active.
                 configurations=expectations_to_evaluate,
                 runtime_configuration=runtime_configuration,
             )
-            statistics = _calc_validation_statistics(results)
+
+            if self._include_rendered_content:
+                for validation_result in results:
+                    validation_result.render()
+                    validation_result.expectation_config.render()
+            statistics = self._calc_validation_statistics(results)
 
             if only_return_failures:
                 abbrev_results = []
@@ -1984,6 +1990,7 @@ set as active.
                     "batch_markers": self.active_batch_markers,
                     "active_batch_definition": self.active_batch_definition,
                     "validation_time": validation_time,
+                    "checkpoint_name": checkpoint_name,
                 },
             )
 
@@ -2068,6 +2075,13 @@ set as active.
     @property
     def expectation_suite(self) -> ExpectationSuite:
         return self._expectation_suite
+
+    @expectation_suite.setter
+    def expectation_suite(self, value: ExpectationSuite) -> None:
+        self._initialize_expectations(
+            expectation_suite=value,
+            expectation_suite_name=value.expectation_suite_name,
+        )
 
     @property
     def expectation_suite_name(self) -> str:
@@ -2294,6 +2308,32 @@ set as active.
                 runtime_configuration.update({"result_format": result_format})
 
         return runtime_configuration
+
+    @staticmethod
+    def _calc_validation_statistics(
+        validation_results: List[ExpectationValidationResult],
+    ) -> ValidationStatistics:
+        """
+        Calculate summary statistics for the validation results and
+        return ``ExpectationStatistics``.
+        """
+        # calc stats
+        evaluated_expectations = len(validation_results)
+        successful_expectations = sum(exp.success for exp in validation_results)
+        unsuccessful_expectations = evaluated_expectations - successful_expectations
+        success = successful_expectations == evaluated_expectations
+        try:
+            success_percent = successful_expectations / evaluated_expectations * 100
+        except ZeroDivisionError:
+            success_percent = None
+
+        return ValidationStatistics(
+            successful_expectations=successful_expectations,
+            evaluated_expectations=evaluated_expectations,
+            unsuccessful_expectations=unsuccessful_expectations,
+            success=success,
+            success_percent=success_percent,
+        )
 
 
 class BridgeValidator:

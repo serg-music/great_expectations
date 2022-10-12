@@ -16,7 +16,7 @@ from great_expectations.rule_based_profiler.config.base import (
     ParameterBuilderConfig,
     RuleBasedProfilerConfig,
 )
-from great_expectations.rule_based_profiler.types.parameter_container import (
+from great_expectations.rule_based_profiler.parameter_container import (
     DOMAIN_KWARGS_PARAMETER_FULLY_QUALIFIED_NAME,
     FULLY_QUALIFIED_PARAMETER_NAME_METADATA_KEY,
     FULLY_QUALIFIED_PARAMETER_NAME_SEPARATOR_CHARACTER,
@@ -99,31 +99,33 @@ class ExpectColumnUniqueValueCountToBeBetween(ColumnExpectation):
         "profiler_config",
     )
 
-    column_unique_values_range_estimator_parameter_builder_config: ParameterBuilderConfig = ParameterBuilderConfig(
+    column_unique_values_range_estimator_parameter_builder_config = ParameterBuilderConfig(
         module_name="great_expectations.rule_based_profiler.parameter_builder",
         class_name="NumericMetricRangeMultiBatchParameterBuilder",
         name="column_unique_values_range_estimator",
         metric_name="column.distinct_values.count",
+        metric_multi_batch_parameter_builder_name=None,
         metric_domain_kwargs=DOMAIN_KWARGS_PARAMETER_FULLY_QUALIFIED_NAME,
         metric_value_kwargs=None,
         enforce_numeric_metric=True,
         replace_nan_with_zero=True,
         reduce_scalar_metric=True,
         false_positive_rate=f"{VARIABLES_KEY}false_positive_rate",
-        quantile_statistic_interpolation_method=f"{VARIABLES_KEY}quantile_statistic_interpolation_method",
         estimator=f"{VARIABLES_KEY}estimator",
-        num_bootstrap_samples=f"{VARIABLES_KEY}num_bootstrap_samples",
-        bootstrap_random_seed=f"{VARIABLES_KEY}bootstrap_random_seed",
-        include_bootstrap_samples_histogram_in_details=f"{VARIABLES_KEY}include_bootstrap_samples_histogram_in_details",
+        n_resamples=f"{VARIABLES_KEY}n_resamples",
+        random_seed=f"{VARIABLES_KEY}random_seed",
+        quantile_statistic_interpolation_method=f"{VARIABLES_KEY}quantile_statistic_interpolation_method",
+        quantile_bias_correction=f"{VARIABLES_KEY}quantile_bias_correction",
+        quantile_bias_std_error_ratio_threshold=f"{VARIABLES_KEY}quantile_bias_std_error_ratio_threshold",
+        include_estimator_samples_histogram_in_details=f"{VARIABLES_KEY}include_estimator_samples_histogram_in_details",
         truncate_values=f"{VARIABLES_KEY}truncate_values",
         round_decimals=f"{VARIABLES_KEY}round_decimals",
         evaluation_parameter_builder_configs=None,
-        json_serialize=True,
     )
     validation_parameter_builder_configs: List[ParameterBuilderConfig] = [
         column_unique_values_range_estimator_parameter_builder_config,
     ]
-    default_profiler_config: RuleBasedProfilerConfig = RuleBasedProfilerConfig(
+    default_profiler_config = RuleBasedProfilerConfig(
         name="expect_column_unique_value_count_to_be_between",  # Convention: use "expectation_type" as profiler name.
         config_version=1.0,
         variables={},
@@ -133,12 +135,8 @@ class ExpectColumnUniqueValueCountToBeBetween(ColumnExpectation):
                     "mostly": 1.0,
                     "strict_min": False,
                     "strict_max": False,
-                    "false_positive_rate": 0.05,
-                    "quantile_statistic_interpolation_method": "auto",
-                    "estimator": "bootstrap",
-                    "num_bootstrap_samples": 9999,
-                    "bootstrap_random_seed": None,
-                    "include_bootstrap_samples_histogram_in_details": False,
+                    "estimator": "exact",
+                    "include_estimator_samples_histogram_in_details": False,
                     "truncate_values": {
                         "lower_bound": 0,
                         "upper_bound": None,

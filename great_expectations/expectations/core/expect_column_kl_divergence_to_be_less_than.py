@@ -740,7 +740,7 @@ class ExpectColumnKlDivergenceToBeLessThan(ColumnExpectation):
                     .properties(width=chart_pixel_width, height=400, autosize="fit")
                 )
 
-                chart = bars.to_json()
+                chart = bars.to_dict()
             elif partition_object.get("values"):
                 values = partition_object["values"]
 
@@ -754,7 +754,7 @@ class ExpectColumnKlDivergenceToBeLessThan(ColumnExpectation):
                     )
                     .properties(width=chart_pixel_width, height=400, autosize="fit")
                 )
-                chart = bars.to_json()
+                chart = bars.to_dict()
 
             if header:
                 expected_distribution = RenderedGraphContent(
@@ -812,7 +812,7 @@ class ExpectColumnKlDivergenceToBeLessThan(ColumnExpectation):
         if len(weights) == 1:
             mark_bar_args["size"] = 20
 
-        chart = ""
+        chart = {}
         if partition_object.get("bins"):
             bins = partition_object["bins"]
             bins_x1 = [round(value, 1) for value in bins[:-1]]
@@ -838,7 +838,7 @@ class ExpectColumnKlDivergenceToBeLessThan(ColumnExpectation):
                 .properties(width=chart_pixel_width, height=400, autosize="fit")
             )
 
-            chart = bars.to_json()
+            chart = bars.to_dict()
         elif partition_object.get("values"):
             values = partition_object["values"]
 
@@ -850,7 +850,7 @@ class ExpectColumnKlDivergenceToBeLessThan(ColumnExpectation):
                 .encode(x="values:N", y="fraction:Q", tooltip=["values", "fraction"])
                 .properties(width=chart_pixel_width, height=400, autosize="fit")
             )
-            chart = bars.to_json()
+            chart = bars.to_dict()
 
         return chart, chart_container_col_width
 

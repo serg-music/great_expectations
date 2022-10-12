@@ -19,6 +19,7 @@ from great_expectations.execution_engine.execution_engine import (
     MetricFunctionTypes,
     MetricPartialFunctionTypes,
 )
+from great_expectations.execution_engine.sqlalchemy_dialect import GESqlDialect
 from great_expectations.execution_engine.sqlalchemy_execution_engine import (
     OperationalError,
 )
@@ -87,10 +88,6 @@ def column_function_partial(
                 metrics: Dict[str, Any],
                 runtime_configuration: Dict,
             ):
-                filter_column_isnull = kwargs.get(
-                    "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
-                )
-
                 (
                     df,
                     compute_domain_kwargs,
@@ -106,6 +103,9 @@ def column_function_partial(
                         message=f'Error: The column "{column_name}" in BatchData does not exist.'
                     )
 
+                filter_column_isnull = kwargs.get(
+                    "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
+                )
                 if filter_column_isnull:
                     df = df[df[column_name].notnull()]
 
@@ -217,7 +217,6 @@ def column_function_partial(
                 filter_column_isnull = kwargs.get(
                     "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
                 )
-
                 if filter_column_isnull:
                     compute_domain_kwargs = execution_engine.add_column_row_condition(
                         metric_domain_kwargs
@@ -309,10 +308,6 @@ def column_condition_partial(
                 metrics: Dict[str, Any],
                 runtime_configuration: Dict,
             ):
-                filter_column_isnull = kwargs.get(
-                    "filter_column_isnull", getattr(cls, "filter_column_isnull", True)
-                )
-
                 (
                     df,
                     compute_domain_kwargs,
@@ -328,6 +323,9 @@ def column_condition_partial(
                         message=f'Error: The column "{column_name}" in BatchData does not exist.'
                     )
 
+                filter_column_isnull = kwargs.get(
+                    "filter_column_isnull", getattr(cls, "filter_column_isnull", True)
+                )
                 if filter_column_isnull:
                     df = df[df[column_name].notnull()]
 
@@ -375,10 +373,6 @@ def column_condition_partial(
                 metrics: Dict[str, Any],
                 runtime_configuration: Dict,
             ):
-                filter_column_isnull = kwargs.get(
-                    "filter_column_isnull", getattr(cls, "filter_column_isnull", True)
-                )
-
                 (
                     selectable,
                     compute_domain_kwargs,
@@ -397,6 +391,10 @@ def column_condition_partial(
                 sqlalchemy_engine: Engine = execution_engine.engine
 
                 dialect = execution_engine.dialect_module
+                if dialect is None:
+                    # Trino
+                    if hasattr(sqlalchemy_engine, "dialect"):
+                        dialect = sqlalchemy_engine.dialect
                 expected_condition = metric_fn(
                     cls,
                     sa.column(column_name),
@@ -405,6 +403,10 @@ def column_condition_partial(
                     _table=selectable,
                     _sqlalchemy_engine=sqlalchemy_engine,
                     _metrics=metrics,
+                )
+
+                filter_column_isnull = kwargs.get(
+                    "filter_column_isnull", getattr(cls, "filter_column_isnull", True)
                 )
                 if filter_column_isnull:
                     # If we "filter" (ignore) nulls then we allow null as part of our new expected condition
@@ -452,10 +454,6 @@ def column_condition_partial(
                 metrics: Dict[str, Any],
                 runtime_configuration: Dict,
             ):
-                filter_column_isnull = kwargs.get(
-                    "filter_column_isnull", getattr(cls, "filter_column_isnull", True)
-                )
-
                 (
                     data,
                     compute_domain_kwargs,
@@ -480,6 +478,10 @@ def column_condition_partial(
                     _metrics=metrics,
                     _compute_domain_kwargs=compute_domain_kwargs,
                     _accessor_domain_kwargs=accessor_domain_kwargs,
+                )
+
+                filter_column_isnull = kwargs.get(
+                    "filter_column_isnull", getattr(cls, "filter_column_isnull", True)
                 )
                 if partial_fn_type == MetricPartialFunctionTypes.WINDOW_CONDITION_FN:
                     if filter_column_isnull:
@@ -1389,15 +1391,6 @@ def _pandas_column_map_condition_values(
         domain_kwargs=compute_domain_kwargs,
     )
 
-    ###
-    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
-    # currently handle filter_column_isnull differently than other map_fn / map_condition
-    # cases.
-    ###
-    filter_column_isnull = kwargs.get(
-        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
-    )
-
     if "column" not in accessor_domain_kwargs:
         raise ValueError(
             """No "column" found in provided metric_domain_kwargs, but it is required for a column map metric
@@ -1412,6 +1405,14 @@ def _pandas_column_map_condition_values(
             message=f'Error: The column "{column_name}" in BatchData does not exist.'
         )
 
+    ###
+    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
+    # currently handle filter_column_isnull differently than other map_fn / map_condition
+    # cases.
+    ###
+    filter_column_isnull = kwargs.get(
+        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
+    )
     if filter_column_isnull:
         df = df[df[column_name].notnull()]
 
@@ -1648,15 +1649,6 @@ def _pandas_column_map_series_and_domain_values(
         domain_kwargs=compute_domain_kwargs,
     )
 
-    ###
-    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
-    # currently handle filter_column_isnull differently than other map_fn / map_condition
-    # cases.
-    ###
-    filter_column_isnull = kwargs.get(
-        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
-    )
-
     if "column" not in accessor_domain_kwargs:
         raise ValueError(
             """No "column" found in provided metric_domain_kwargs, but it is required for a column map metric
@@ -1671,6 +1663,14 @@ def _pandas_column_map_series_and_domain_values(
             message=f'Error: The column "{column_name}" in BatchData does not exist.'
         )
 
+    ###
+    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
+    # currently handle filter_column_isnull differently than other map_fn / map_condition
+    # cases.
+    ###
+    filter_column_isnull = kwargs.get(
+        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
+    )
     if filter_column_isnull:
         df = df[df[column_name].notnull()]
 
@@ -1715,15 +1715,6 @@ def _pandas_map_condition_index(
         domain_kwargs=domain_kwargs,
     )
 
-    ###
-    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
-    # currently handle filter_column_isnull differently than other map_fn / map_condition
-    # cases.
-    ###
-    filter_column_isnull = kwargs.get(
-        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
-    )
-
     if "column" in accessor_domain_kwargs:
         column_name = accessor_domain_kwargs["column"]
 
@@ -1732,6 +1723,14 @@ def _pandas_map_condition_index(
                 message=f'Error: The column "{column_name}" in BatchData does not exist.'
             )
 
+        ###
+        # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
+        # currently handle filter_column_isnull differently than other map_fn / map_condition
+        # cases.
+        ###
+        filter_column_isnull = kwargs.get(
+            "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
+        )
         if filter_column_isnull:
             df = df[df[column_name].notnull()]
 
@@ -1772,15 +1771,6 @@ def _pandas_column_map_condition_value_counts(
         domain_kwargs=compute_domain_kwargs,
     )
 
-    ###
-    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
-    # currently handle filter_column_isnull differently than other map_fn / map_condition
-    # cases.
-    ###
-    filter_column_isnull = kwargs.get(
-        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
-    )
-
     column_name = accessor_domain_kwargs["column"]
 
     if "column" not in accessor_domain_kwargs:
@@ -1795,6 +1785,14 @@ def _pandas_column_map_condition_value_counts(
             message=f'Error: The column "{column_name}" in BatchData does not exist.'
         )
 
+    ###
+    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
+    # currently handle filter_column_isnull differently than other map_fn / map_condition
+    # cases.
+    ###
+    filter_column_isnull = kwargs.get(
+        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
+    )
     if filter_column_isnull:
         df = df[df[column_name].notnull()]
 
@@ -1846,15 +1844,6 @@ def _pandas_map_condition_rows(
         domain_kwargs=domain_kwargs,
     )
 
-    ###
-    # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
-    # currently handle filter_column_isnull differently than other map_fn / map_condition
-    # cases.
-    ###
-    filter_column_isnull = kwargs.get(
-        "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
-    )
-
     if "column" in accessor_domain_kwargs:
         column_name = accessor_domain_kwargs["column"]
 
@@ -1863,6 +1852,14 @@ def _pandas_map_condition_rows(
                 message=f'Error: The column "{column_name}" in BatchData does not exist.'
             )
 
+        ###
+        # NOTE: 20201111 - JPC - in the map_series / map_condition_series world (pandas), we
+        # currently handle filter_column_isnull differently than other map_fn / map_condition
+        # cases.
+        ###
+        filter_column_isnull = kwargs.get(
+            "filter_column_isnull", getattr(cls, "filter_column_isnull", False)
+        )
         if filter_column_isnull:
             df = df[df[column_name].notnull()]
 
@@ -1950,7 +1947,7 @@ def _sqlalchemy_map_condition_unexpected_count_value(
         count_selectable = count_selectable.select_from(selectable)
 
     try:
-        if execution_engine.engine.dialect.name.lower() == "mssql":
+        if execution_engine.engine.dialect.name.lower() == GESqlDialect.MSSQL:
             temp_table_name: str = generate_temporary_table_name(
                 default_table_name_prefix="#ge_temp_"
             )
@@ -2052,7 +2049,7 @@ def _sqlalchemy_column_map_condition_values(
         query = query.limit(result_format["partial_unexpected_count"])
     elif (
         result_format["result_format"] == "COMPLETE"
-        and execution_engine.engine.dialect.name.lower() == "bigquery"
+        and execution_engine.engine.dialect.name.lower() == GESqlDialect.BIGQUERY
     ):
         logger.warning(
             "BigQuery imposes a limit of 10000 parameters on individual queries; "

@@ -5,6 +5,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 import great_expectations.exceptions as ge_exceptions
 from great_expectations.core.id_dict import IDDict
 from great_expectations.core.metric import Metric
+from great_expectations.render.types import AtomicRendererPrefix
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,35 @@ def register_renderer(
 
 
 def get_renderer_names(object_name: str) -> List[str]:
+    """Gets renderer names for a given Expectation or Metric.
+
+    Args:
+        object_name: The name of an Expectation or Metric for which to get renderer names.
+
+    Returns:
+        A list of renderer names for the Expectation or Metric.
+    """
     return list(_registered_renderers.get(object_name, {}).keys())
+
+
+def get_renderer_names_with_renderer_prefix(
+    object_name: str,
+    renderer_prefix: str,
+) -> List[str]:
+    """Gets renderer names, with a given prefix, for a given Expectation or Metric.
+
+    Args:
+        object_name: The name of an Expectation or Metric for which to get renderer names.
+        renderer_prefix: The prefix of the renderers for which to return.
+
+    Returns:
+        A list of renderer names for the given prefix and Expectation or Metric.
+    """
+    return [
+        renderer_name
+        for renderer_name in get_renderer_names(object_name=object_name)
+        if renderer_name.startswith(renderer_prefix)
+    ]
 
 
 def get_renderer_impls(object_name: str) -> List[str]:
@@ -281,6 +310,10 @@ def get_expectation_impl(expectation_name: str):
             DeprecationWarning,
         )
         expectation_name = renamed[expectation_name]
+
+    if expectation_name not in _registered_expectations:
+        raise ge_exceptions.ExpectationNotFoundError(f"{expectation_name} not found")
+
     return _registered_expectations.get(expectation_name)
 
 
