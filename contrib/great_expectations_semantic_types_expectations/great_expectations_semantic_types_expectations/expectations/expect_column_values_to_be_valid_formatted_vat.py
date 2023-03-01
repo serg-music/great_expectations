@@ -3,13 +3,11 @@ This is a template for creating custom ColumnMapExpectations.
 For detailed instructions on how to use it, please see:
     https://docs.greatexpectations.io/docs/guides/expectations/creating_custom_expectations/how_to_create_custom_column_map_expectations
 """
-import json
 from typing import Optional
 
 import pyvat
 
 from great_expectations.core.expectation_configuration import ExpectationConfiguration
-from great_expectations.exceptions import InvalidExpectationConfigurationError
 from great_expectations.execution_engine import PandasExecutionEngine
 from great_expectations.expectations.expectation import ColumnMapExpectation
 from great_expectations.expectations.metrics import (
@@ -21,11 +19,11 @@ from great_expectations.expectations.metrics import (
 def is_valid_formatted_vat(vat_num: str) -> bool:
     try:
         res = pyvat.is_vat_number_format_valid(vat_num, None)
-        if res == True:
+        if res is True:
             return True
         else:
             return False
-    except Exception as e:
+    except Exception:
         return False
 
 
@@ -54,7 +52,7 @@ class ColumnValuesToBeValidFormattedVat(ColumnMapMetricProvider):
 
 # This class defines the Expectation itself
 class ExpectColumnValuesToBeValidFormattedVat(ColumnMapExpectation):
-    """Expect column values to be valid formatted VAT (Value Added Tax)"""
+    """Expect column values to be valid formatted VAT (Value Added Tax)."""
 
     # These examples will be shown in the public gallery.
     # They will also be executed as unit tests for your Expectation.
@@ -124,8 +122,7 @@ class ExpectColumnValuesToBeValidFormattedVat(ColumnMapExpectation):
         """
 
         super().validate_configuration(configuration)
-        if configuration is None:
-            configuration = self.configuration
+        configuration = configuration or self.configuration
 
         # # Check other things in configuration.kwargs and raise Exceptions if needed
         # try:

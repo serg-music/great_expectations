@@ -1,15 +1,9 @@
-import json
 from typing import Optional, Tuple
 
 from moneyed import list_all_currencies
 
 from great_expectations.core.expectation_configuration import ExpectationConfiguration
-from great_expectations.exceptions import InvalidExpectationConfigurationError
-from great_expectations.execution_engine import (
-    PandasExecutionEngine,
-    SparkDFExecutionEngine,
-    SqlAlchemyExecutionEngine,
-)
+from great_expectations.execution_engine import PandasExecutionEngine
 from great_expectations.expectations.expectation import ColumnMapExpectation
 from great_expectations.expectations.metrics import (
     ColumnMapMetricProvider,
@@ -54,6 +48,7 @@ class ColumnValuesCurrencyCode(ColumnMapMetricProvider):
 # This class defines the Expectation itself
 class ExpectColumnValuesToBeValidCurrencyCode(ColumnMapExpectation):
     """Expect values in this column to be valid currency codes (three capital letters).
+
     See ISO-4217 for more information.
     """
 
@@ -114,8 +109,7 @@ class ExpectColumnValuesToBeValidCurrencyCode(ColumnMapExpectation):
         """
 
         super().validate_configuration(configuration)
-        if configuration is None:
-            configuration = self.configuration
+        configuration = configuration or self.configuration
 
         # # Check other things in configuration.kwargs and raise Exceptions if needed
         # try:

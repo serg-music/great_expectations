@@ -1,16 +1,10 @@
-import json
 from typing import Optional
 
 import geopandas
 from shapely.geometry import LineString, Point, Polygon
 
 from great_expectations.core.expectation_configuration import ExpectationConfiguration
-from great_expectations.exceptions import InvalidExpectationConfigurationError
-from great_expectations.execution_engine import (
-    PandasExecutionEngine,
-    SparkDFExecutionEngine,
-    SqlAlchemyExecutionEngine,
-)
+from great_expectations.execution_engine import PandasExecutionEngine
 from great_expectations.expectations.expectation import ColumnMapExpectation
 from great_expectations.expectations.metrics import (
     ColumnMapMetricProvider,
@@ -21,7 +15,7 @@ from great_expectations.expectations.metrics import (
 def is_valid_geometry(geo):
     try:
         return geo.is_valid
-    except:
+    except Exception:
         return False
 
 
@@ -52,7 +46,8 @@ class ColumnValuesToBeValidGeometry(ColumnMapMetricProvider):
 # This class defines the Expectation itself
 class ExpectColumnValuesToBeValidGeometry(ColumnMapExpectation):
     """Expect values in this column to be valid geometry types (Polygon, LineString, etc.).
-    See https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoSeries.is_valid.html
+
+    See https://geopandas.org/en/stable/docs/reference/api/geopandas.GeoSeries.is_valid.html \
     for more information.
     """
 
@@ -116,8 +111,7 @@ class ExpectColumnValuesToBeValidGeometry(ColumnMapExpectation):
         """
 
         super().validate_configuration(configuration)
-        if configuration is None:
-            configuration = self.configuration
+        configuration = configuration or self.configuration
 
         # # Check other things in configuration.kwargs and raise Exceptions if needed
         # try:

@@ -1,15 +1,9 @@
-import json
 from typing import Optional
 
 import zipcodes
 
 from great_expectations.core.expectation_configuration import ExpectationConfiguration
-from great_expectations.exceptions import InvalidExpectationConfigurationError
-from great_expectations.execution_engine import (
-    PandasExecutionEngine,
-    SparkDFExecutionEngine,
-    SqlAlchemyExecutionEngine,
-)
+from great_expectations.execution_engine import PandasExecutionEngine
 from great_expectations.expectations.expectation import ColumnMapExpectation
 from great_expectations.expectations.metrics import (
     ColumnMapMetricProvider,
@@ -56,6 +50,7 @@ class ColumnValuesToBeValidNewMexicoZip(ColumnMapMetricProvider):
 # This class defines the Expectation itself
 class ExpectColumnValuesToBeValidNewMexicoZip(ColumnMapExpectation):
     """Expect values in this column to be valid New Mexico zipcodes.
+
     See https://pypi.org/project/zipcodes/ for more information.
     """
 
@@ -97,7 +92,7 @@ class ExpectColumnValuesToBeValidNewMexicoZip(ColumnMapExpectation):
     default_kwarg_values = {}
 
     def validate_configuration(
-        self, configuration: Optional[ExpectationConfiguration]
+        self, configuration: Optional[ExpectationConfiguration] = None
     ) -> None:
         """
         Validates that a configuration has been set, and sets a configuration if it has yet to be set. Ensures that
@@ -111,8 +106,7 @@ class ExpectColumnValuesToBeValidNewMexicoZip(ColumnMapExpectation):
         """
 
         super().validate_configuration(configuration)
-        if configuration is None:
-            configuration = self.configuration
+        configuration = configuration or self.configuration
 
         # # Check other things in configuration.kwargs and raise Exceptions if needed
         # try:

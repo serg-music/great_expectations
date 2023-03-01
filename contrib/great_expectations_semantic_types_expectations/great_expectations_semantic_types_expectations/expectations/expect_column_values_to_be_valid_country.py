@@ -1,10 +1,8 @@
-import json
 from typing import Optional
 
 import geonamescache
 
 from great_expectations.core.expectation_configuration import ExpectationConfiguration
-from great_expectations.exceptions import InvalidExpectationConfigurationError
 from great_expectations.execution_engine import PandasExecutionEngine
 from great_expectations.expectations.expectation import ColumnMapExpectation
 from great_expectations.expectations.metrics import (
@@ -121,8 +119,7 @@ class ExpectColumnValuesToBeValidCountry(ColumnMapExpectation):
         """
 
         super().validate_configuration(configuration)
-        if configuration is None:
-            configuration = self.configuration
+        configuration = configuration or self.configuration
 
         # # Check other things in configuration.kwargs and raise Exceptions if needed
         # try:

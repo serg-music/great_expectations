@@ -1,11 +1,6 @@
-import json
-from typing import Optional
-
 import geopandas
 from shapely.geometry import LineString, mapping, shape
 
-from great_expectations.core.expectation_configuration import ExpectationConfiguration
-from great_expectations.exceptions import InvalidExpectationConfigurationError
 from great_expectations.execution_engine import PandasExecutionEngine
 from great_expectations.expectations.expectation import ColumnMapExpectation
 from great_expectations.expectations.metrics import (
@@ -54,7 +49,7 @@ class ColumnValuesLinestringMilesDistanceBetween(ColumnMapMetricProvider):
 # This class defines the Expectation itself
 # The main business logic for calculation lives here.
 class ExpectColumnValuesToBeLineMilesDistanceBetween(ColumnMapExpectation):
-    """This expectation will check if the distance of Linestring is between two values in miles."""
+    """Expect the distance of each Linestring in the column to be between two values in miles."""
 
     # These examples will be shown in the public gallery, and also executed as unit tests for your Expectation
     examples = [

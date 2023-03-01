@@ -24,7 +24,7 @@ from tests.conftest import build_test_backends_list_v2_api
 logger = logging.getLogger(__name__)
 
 
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc):  # noqa: C901 - 38
     # Load all the JSON files in the directory
     dir_path = os.path.dirname(os.path.realpath(__file__))
     expectation_dirs = [
@@ -111,6 +111,8 @@ def pytest_generate_tests(metafunc):
 
                             if isinstance(data_asset, SqlAlchemyDataset):
                                 # Call out supported dialects
+                                if "pandas_v2_api" in only_for:
+                                    generate_test = True
                                 if "sqlalchemy" in only_for:
                                     generate_test = True
                                 elif (
@@ -189,6 +191,8 @@ def pytest_generate_tests(metafunc):
                             elif isinstance(data_asset, SparkDFDataset):
                                 if "spark" in only_for:
                                     generate_test = True
+                                elif "spark_v2_api" in only_for:
+                                    generate_test = True
 
                         if not generate_test:
                             continue
@@ -263,7 +267,15 @@ def pytest_generate_tests(metafunc):
                                     and isinstance(data_asset, PandasDataset)
                                 )
                                 or (
+                                    "pandas_v2_api" in suppress_test_for
+                                    and isinstance(data_asset, PandasDataset)
+                                )
+                                or (
                                     "spark" in suppress_test_for
+                                    and isinstance(data_asset, SparkDFDataset)
+                                )
+                                or (
+                                    "spark_v2_api" in suppress_test_for
                                     and isinstance(data_asset, SparkDFDataset)
                                 )
                             ):

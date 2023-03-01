@@ -3,16 +3,21 @@ import traceback
 import warnings
 from copy import deepcopy
 
-from great_expectations.core.expectation_configuration import ExpectationConfiguration
+from great_expectations.core.expectation_configuration import (
+    ExpectationConfiguration,  # noqa: TCH001
+)
 from great_expectations.expectations.core.expect_column_kl_divergence_to_be_less_than import (  # noqa: F401
     ExpectColumnKlDivergenceToBeLessThan,
 )
 from great_expectations.expectations.registry import get_renderer_impl
-from great_expectations.render import LegacyDiagnosticRendererType, LegacyRendererType
+from great_expectations.render import (
+    LegacyDiagnosticRendererType,
+    LegacyRendererType,
+    RenderedTableContent,
+)
 from great_expectations.render.renderer.content_block.expectation_string import (
     ExpectationStringRenderer,
 )
-from great_expectations.render.types import RenderedTableContent
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +107,6 @@ class ValidationResultsTableContentBlockRenderer(ExpectationStringRenderer):
         def row_generator_fn(
             configuration=None,
             result=None,
-            language=None,
             runtime_configuration=None,
             **kwargs,
         ):
@@ -195,7 +199,7 @@ diagnose and repair the underlying issue.  Detailed information follows:
             if unexpected_statement:
                 expectation_string_cell += unexpected_statement
             if unexpected_table:
-                expectation_string_cell.append(unexpected_table)
+                expectation_string_cell += unexpected_table
             if len(expectation_string_cell) > 1:
                 output_row = [status_cell + [expectation_string_cell] + observed_value]
             else:

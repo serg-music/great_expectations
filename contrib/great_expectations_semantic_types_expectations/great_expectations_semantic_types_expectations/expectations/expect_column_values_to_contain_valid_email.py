@@ -1,32 +1,14 @@
-import json
 import re  # regular expressions
 
-# !!! This giant block of imports should be something simpler, such as:
-from great_expectations import *
 from great_expectations.execution_engine import (
     PandasExecutionEngine,
     SparkDFExecutionEngine,
-    SqlAlchemyExecutionEngine,
 )
-from great_expectations.expectations.expectation import (
-    ColumnMapExpectation,
-    Expectation,
-    ExpectationConfiguration,
-    render_evaluation_parameter_string,
-)
+from great_expectations.expectations.expectation import ColumnMapExpectation
 from great_expectations.expectations.metrics import (
     ColumnMapMetricProvider,
     column_condition_partial,
 )
-from great_expectations.expectations.registry import (
-    _registered_expectations,
-    _registered_metrics,
-    _registered_renderers,
-)
-from great_expectations.render.renderer.renderer import renderer
-from great_expectations.render.types import RenderedStringTemplateContent
-from great_expectations.render.util import num_to_str, substitute_none_for_missing
-from great_expectations.validator.validator import Validator
 
 EMAIL_REGEX = r"[a-z0-9]+[\._]?[a-z0-9]+[@]\w+[.]\w{2,7}$"
 
@@ -60,7 +42,7 @@ class ColumnValuesContainValidEmail(ColumnMapMetricProvider):
 # This class defines the Expectation itself
 # The main business logic for calculation lives here.
 class ExpectColumnValuesToContainValidEmail(ColumnMapExpectation):
-    """Expects values in given column to be valid email addresses."""
+    """Expect values in given column to be valid email addresses."""
 
     # These examples will be shown in the public gallery, and also executed as unit tests for your Expectation
 
@@ -77,8 +59,7 @@ class ExpectColumnValuesToContainValidEmail(ColumnMapExpectation):
         """
 
         super().validate_configuration(configuration)
-        if configuration is None:
-            configuration = self.configuration
+        configuration = configuration or self.configuration
 
     examples = [
         {
@@ -246,7 +227,7 @@ class ExpectColumnValuesToContainValidEmail(ColumnMapExpectation):
 #     @classmethod
 #     @renderer(renderer_type="renderer.question")
 #     def _question_renderer(
-#         cls, configuration, result=None, language=None, runtime_configuration=None
+#         cls, configuration, result=None, runtime_configuration=None
 #     ):
 #         column = configuration.kwargs.get("column")
 #         mostly = configuration.kwargs.get("mostly")
@@ -258,7 +239,7 @@ class ExpectColumnValuesToContainValidEmail(ColumnMapExpectation):
 #     @classmethod
 #     @renderer(renderer_type="renderer.answer")
 #     def _answer_renderer(
-#         cls, configuration=None, result=None, language=None, runtime_configuration=None
+#         cls, configuration=None, result=None, runtime_configuration=None
 #     ):
 #         column = result.expectation_config.kwargs.get("column")
 #         mostly = result.expectation_config.kwargs.get("mostly")
@@ -276,16 +257,12 @@ class ExpectColumnValuesToContainValidEmail(ColumnMapExpectation):
 #         cls,
 #         configuration=None,
 #         result=None,
-#         language=None,
 #         runtime_configuration=None,
 #         **kwargs,
 #     ):
 # !!! This example renderer should be shorter
 #         runtime_configuration = runtime_configuration or {}
-#         include_column_name = runtime_configuration.get("include_column_name", True)
-#         include_column_name = (
-#             include_column_name if include_column_name is not None else True
-#         )
+#         include_column_name = False if runtime_configuration.get("include_column_name") is False else True
 #         styling = runtime_configuration.get("styling")
 #         params = substitute_none_for_missing(
 #             configuration.kwargs,

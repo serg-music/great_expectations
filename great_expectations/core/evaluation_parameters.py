@@ -9,6 +9,7 @@ import traceback
 from collections import namedtuple
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Union
 
+import dateutil
 from pyparsing import (
     CaselessKeyword,
     Combine,
@@ -31,7 +32,7 @@ from great_expectations.core.util import convert_to_json_serializable
 from great_expectations.exceptions import EvaluationParameterError
 
 if TYPE_CHECKING:
-    from great_expectations.data_context import DataContext
+    from great_expectations.data_context import AbstractDataContext
 
 logger = logging.getLogger(__name__)
 _epsilon = 1e-12
@@ -191,15 +192,35 @@ class EvaluationParameterParser:
                 args = reversed([self.evaluate_stack(s) for _ in range(num_args)])
                 return self.fn[op](*args)
         else:
-            # try to evaluate as int first, then as float if int fails
-            # NOTE: JPC - 20200403 - Originally I considered returning the raw op here if parsing as float also
-            # fails, but I decided against it to instead require that the *entire* expression evaluates
-            # numerically UNLESS there is *exactly one* expression to substitute (see cases where len(L) == 1 in the
-            # parse_evaluation_parameter method.
+            # Require that the *entire* expression evaluates to number or datetime UNLESS there is *exactly one*
+            # expression to substitute (see cases where len(parse_results) == 1 in the parse_evaluation_parameter
+            # method).
+            evaluated: Union[int, float, datetime.datetime]
             try:
-                return int(op)
+                evaluated = int(op)
+                logger.info(
+                    "Evaluation parameter operand successfully parsed as integer."
+                )
             except ValueError:
-                return float(op)
+                logger.info("Parsing evaluation parameter operand as integer failed.")
+                try:
+                    evaluated = float(op)
+                    logger.info(
+                        "Evaluation parameter operand successfully parsed as float."
+                    )
+                except ValueError:
+                    logger.info("Parsing evaluation parameter operand as float failed.")
+                    try:
+                        evaluated = dateutil.parser.parse(op)
+                        logger.info(
+                            "Evaluation parameter operand successfully parsed as datetime."
+                        )
+                    except ValueError as e:
+                        logger.info(
+                            "Parsing evaluation parameter operand as datetime failed."
+                        )
+                        raise e
+            return evaluated
 
 
 def build_evaluation_parameters(
@@ -250,15 +271,15 @@ EXPR = EvaluationParameterParser()
 
 
 def find_evaluation_parameter_dependencies(parameter_expression):
-    """Parse a parameter expression to identify dependencies including GE URNs.
+    """Parse a parameter expression to identify dependencies including GX URNs.
 
     Args:
         parameter_expression: the parameter to parse
 
     Returns:
         a dictionary including:
-          - "urns": set of strings that are valid GE URN objects
-          - "other": set of non-GE URN strings that are required to evaluate the parameter expression
+          - "urns": set of strings that are valid GX URN objects
+          - "other": set of non-GX URN strings that are required to evaluate the parameter expression
 
     """
     expr = EvaluationParameterParser()
@@ -313,7 +334,7 @@ def find_evaluation_parameter_dependencies(parameter_expression):
 def parse_evaluation_parameter(  # noqa: C901 - complexity 19
     parameter_expression: str,
     evaluation_parameters: Optional[Dict[str, Any]] = None,
-    data_context: Optional[DataContext] = None,
+    data_context: Optional[AbstractDataContext] = None,
 ) -> Any:
     """Use the provided evaluation_parameters dict to parse a given parameter expression.
 
@@ -328,7 +349,7 @@ def parse_evaluation_parameter(  # noqa: C901 - complexity 19
 
     Valid variables must begin with an alphabetic character and may contain alphanumeric characters plus '_' and '$',
     EXCEPT if they begin with the string "urn:great_expectations" in which case they may also include additional
-    characters to support inclusion of GE URLs (see :ref:`evaluation_parameters` for more information).
+    characters to support inclusion of GX URLs (see :ref:`evaluation_parameters` for more information).
     """
     if evaluation_parameters is None:
         evaluation_parameters = {}
@@ -340,44 +361,46 @@ def parse_evaluation_parameter(  # noqa: C901 - complexity 19
         # NOTE: 20211122 - Chetan - Any future built-ins that are zero arity functions will match this behavior
         pass
 
-    elif len(parse_results) == 1 and parse_results[0] not in evaluation_parameters:  # type: ignore[index, arg-type]
+    elif len(parse_results) == 1 and parse_results[0] not in evaluation_parameters:
         # In this special case there were no operations to find, so only one value, but we don't have something to
         # substitute for that value
         try:
-            res = ge_urn.parseString(parse_results[0])  # type: ignore[index]
+            res = ge_urn.parseString(parse_results[0])
             if res["urn_type"] == "stores":
                 store = data_context.stores.get(res["store_name"])  # type: ignore[union-attr]
-                return store.get_query_result(  # type: ignore[union-attr]
-                    res["metric_name"], res.get("metric_kwargs", {})
-                )
+                if store:
+                    return store.get_query_result(
+                        res["metric_name"], res.get("metric_kwargs", {})
+                    )
+                return None
             else:
                 logger.error(
                     "Unrecognized urn_type in ge_urn: must be 'stores' to use a metric store."
                 )
                 raise EvaluationParameterError(
-                    f"No value found for $PARAMETER {str(parse_results[0])}"  # type: ignore[index]
+                    f"No value found for $PARAMETER {str(parse_results[0])}"
                 )
         except ParseException as e:
             logger.debug(
                 f"Parse exception while parsing evaluation parameter: {str(e)}"
             )
             raise EvaluationParameterError(
-                f"No value found for $PARAMETER {str(parse_results[0])}"  # type: ignore[index]
+                f"No value found for $PARAMETER {str(parse_results[0])}"
             ) from e
         except AttributeError as e:
             logger.warning("Unable to get store for store-type valuation parameter.")
             raise EvaluationParameterError(
-                f"No value found for $PARAMETER {str(parse_results[0])}"  # type: ignore[index]
+                f"No value found for $PARAMETER {str(parse_results[0])}"
             ) from e
 
-    elif len(parse_results) == 1:  # type: ignore[arg-type]
+    elif len(parse_results) == 1:
         # In this case, we *do* have a substitution for a single type. We treat this specially because in this
         # case, we allow complex type substitutions (i.e. do not coerce to string as part of parsing)
         # NOTE: 20201023 - JPC - to support MetricDefinition as an evaluation parameter type, we need to handle that
         # case here; is the evaluation parameter provided here in fact a metric definition?
-        return evaluation_parameters[parse_results[0]]  # type: ignore[index]
+        return evaluation_parameters[parse_results[0]]
 
-    elif len(parse_results) == 0 or parse_results[0] != "Parse Failure":  # type: ignore[index, arg-type]
+    elif len(parse_results) == 0 or parse_results[0] != "Parse Failure":
         # we have a stack to evaluate and there was no parse failure.
         # iterate through values and look for URNs pointing to a store:
         for i, ob in enumerate(EXPR.exprStack):
@@ -389,11 +412,12 @@ def parse_evaluation_parameter(  # noqa: C901 - complexity 19
                     res = ge_urn.parseString(ob)
                     if res["urn_type"] == "stores":
                         store = data_context.stores.get(res["store_name"])  # type: ignore[union-attr]
-                        EXPR.exprStack[i] = str(
-                            store.get_query_result(  # type: ignore[union-attr]
-                                res["metric_name"], res.get("metric_kwargs", {})
-                            )
-                        )  # value placed back in stack must be a string
+                        if store:
+                            EXPR.exprStack[i] = str(
+                                store.get_query_result(
+                                    res["metric_name"], res.get("metric_kwargs", {})
+                                )
+                            )  # value placed back in stack must be a string
                     else:
                         # handle other urn_types here, but note that validations URNs are being resolved elsewhere.
                         pass
@@ -404,7 +428,7 @@ def parse_evaluation_parameter(  # noqa: C901 - complexity 19
                     pass
 
     else:
-        err_str, err_line, err_col = parse_results[-1]  # type: ignore[index]
+        err_str, err_line, err_col = parse_results[-1]
         raise EvaluationParameterError(
             f"Parse Failure: {err_str}\nStatement: {err_line}\nColumn: {err_col}"
         )
